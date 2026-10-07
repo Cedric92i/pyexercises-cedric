@@ -35,7 +35,12 @@ print("3.LELEU")
 print("4.LELEU")
 print("5.LELEU")
 
+range = range(1,10)
+print (list)
 
-print (¨Printing with for loop")
-       for number in range(1,6) :
+
+print ("printing with for loop")
+
+for number in range(1,6):
     print(number, "Cedric")
+
