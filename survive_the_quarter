@@ -1,0 +1,228 @@
+# SURVIVE THE QUARTER - PYTHON FINAL PROJECT
+# Name: [Write your first and last name here]
+# Group: B
+#
+# IMPORTANT: Answer these four questions in YOUR OWN WORDS before submitting.
+# The examples below are a starting point to understand the assignment.
+#
+# 1) WHAT GOES IN?
+# My scenarios_B.csv file uses semicolons and has 14 columns. Each row gives
+# a scenario number, a situation and three options (A, B, C). Each option has
+# a description, a money change, a buzz/reputation change and a reaction.
+# Numbers are written as integers, including negatives like -800 and -10.
+#
+# 2) WHAT HAPPENS DURING ONE DAY?
+# Show the current day and gauges.
+# Show the situation and the three options.
+# Ask the player to enter A, B or C, repeating for an invalid answer.
+# Apply the impacts, show the reaction, and update the streak bonus.
+# Stop immediately if the budget or reputation reaches zero or less.
+#
+# 3) WHAT COMES OUT?
+# The game displays whether the player is fired or survives with a title.
+# It also displays the best and worst decisions. results.csv saves one row:
+# player name, remaining budget, reputation, final title and today's date.
+#
+# 4) WHAT COULD GO WRONG?
+# An invalid choice: ask again until the player types A, B or C.
+# A gauge at zero or below: stop the game and show why the player was fired.
+# A missing or incorrect CSV file: show an understandable error message.
+#
+# MY EXTRA FEATURE: a) STREAK BONUS
+# I chose the streak bonus because it rewards three positive reputation
+# decisions in a row and lets me practise a counter and an if condition.
+# After three consecutive positive Buzz changes, the player gets +500 EUR.
+
+import csv
+import random
+from datetime import date
+from pathlib import Path
+
+
+# Work with files in the same directory as this Python script.
+FOLDER = Path(__file__).resolve().parent
+SCENARIOS_FILE = FOLDER / "scenarios_B.csv"
+RESULTS_FILE = FOLDER / "results.csv"
+
+
+# 1. Read the group's CSV and organize each scenario in a dictionary.
+# Each option is a tuple: (text, money change, reputation change, feedback).
+def load_scenarios(filename):
+    scenarios = []
+
+    with open(filename, mode="r", newline="", encoding="utf-8-sig") as file:
+        reader = csv.DictReader(file, delimiter=";")
+        expected_columns = ["Num", "Situation"]
+        for letter in "ABC":
+            expected_columns.extend([
+                f"{letter}_Choice", f"{letter}_Money",
+                f"{letter}_Buzz", f"{letter}_Reaction"
+            ])
+
+        if not reader.fieldnames or any(col not in reader.fieldnames for col in expected_columns):
+            raise ValueError("The scenario file does not have the expected Group B columns.")
+
+        for row in reader:
+            try:
+                options = {}
+                for letter in "ABC":
+                    options[letter] = (
+                        row[f"{letter}_Choice"],
+                        int(row[f"{letter}_Money"]),
+                        int(row[f"{letter}_Buzz"]),
+                        row[f"{letter}_Reaction"]
+                    )
+
+                scenarios.append({
+                    "number": int(row["Num"]),
+                    "situation": row["Situation"],
+                    "options": options
+                })
+            except (ValueError, TypeError, KeyError) as error:
+                raise ValueError(f"Invalid information in scenario {row.get('Num', '?')}.") from error
+
+    if len(scenarios) < 10:
+        raise ValueError("At least 10 scenarios are needed to play 10 days.")
+
+    return scenarios
+
+
+# 2. Keep asking until the player gives one of the accepted answers.
+def ask_choice():
+    while True:
+        answer = input("Your choice (A, B or C): ").strip().upper()
+        if answer in ("A", "B", "C"):
+            return answer
+        print("Please type A, B or C.")
+
+
+# 3. Update the two gauges and return a tuple that can be unpacked.
+def apply_choice(budget, reputation, option):
+    text, money_change, reputation_change, feedback = option
+    budget = budget + money_change
+    reputation = min(100, reputation + reputation_change)
+    return budget, reputation
+
+
+# 4. Calculate a title for a surviving player, based on the score.
+def get_title(budget, reputation):
+    score = reputation + budget // 200
+    if score < 95:
+        return "Eternal Intern"
+    elif score < 120:
+        return "Growth Hacker"
+    elif score < 140:
+        return "CMO Material"
+    else:
+        return "Viral Legend"
+
+
+# 5. Print the game result and the best/worst reputation changes.
+def show_final_result(name, budget, reputation, history):
+    print("\n==============================")
+
+    if budget <= 0 or reputation <= 0:
+        title = "Fired"
+        reasons = []
+        if budget <= 0:
+            reasons.append("your budget reached zero or less")
+        if reputation <= 0:
+            reasons.append("your reputation reached zero or less")
+        print("Game over! You are fired because " + " and ".join(reasons) + ".")
+    else:
+        title = get_title(budget, reputation)
+        score = reputation + budget // 200
+        print("Quarter survived!")
+        print(f"Final score: {score}")
+        print(f"{name}, your title: {title}")
+
+    print(f"Budget left: {budget} EUR | Reputation: {reputation}/100")
+
+    if history:
+        # The first value in each tuple is the reputation change.
+        best = max(history)
+        worst = min(history)
+        print(f'Best move: day {best[1]}, "{best[2]}" ({best[0]:+d})')
+        print(f'Worst move: day {worst[1]}, "{worst[2]}" ({worst[0]:+d})')
+
+    return title
+
+
+# 6. Append a result to CSV; create the header when the file is empty.
+def save_result(name, budget, reputation, title):
+    needs_header = not RESULTS_FILE.exists() or RESULTS_FILE.stat().st_size == 0
+
+    with open(RESULTS_FILE, mode="a", newline="", encoding="utf-8") as file:
+        writer = csv.writer(file)
+        if needs_header:
+            writer.writerow(["name", "budget", "reputation", "title", "date"])
+        writer.writerow([name, budget, reputation, title, date.today().isoformat()])
+
+    print("Saved in results.csv")
+
+
+# 7. Play 10 random days, or stop immediately after a gauge reaches zero.
+def play_game():
+    print("=== SURVIVE THE QUARTER ===")
+    name = input("What is your name? ").strip() or "Anonymous"
+
+    try:
+        scenarios = load_scenarios(SCENARIOS_FILE)
+    except (OSError, ValueError) as error:
+        print(f"Cannot start the game: {error}")
+        return
+
+    random.shuffle(scenarios)
+    budget = 10000
+    reputation = 50
+    streak = 0
+    history = []
+
+    for day, scenario in enumerate(scenarios[:10], start=1):
+        print(f"\n--- Day {day} ---")
+        print(f"[Budget: {budget} EUR | Reputation: {reputation}/100]")
+        print(scenario["situation"])
+
+        for letter in "ABC":
+            print(f"  {letter}: {scenario['options'][letter][0]}")
+
+        answer = ask_choice()
+        option = scenario["options"][answer]
+        text, money_change, reputation_change, feedback = option
+        budget, reputation = apply_choice(budget, reputation, option)
+
+        print(feedback)
+        print(f"Budget {money_change:+d} EUR, Reputation {reputation_change:+d}")
+
+        # Keep one tuple for every day played (reputation change first).
+        history.append((reputation_change, day, text))
+
+        # A gauge at zero or less ends the game immediately.
+        if budget <= 0 or reputation <= 0:
+            break
+
+        # Extra feature: reward three consecutive positive Buzz changes.
+        if reputation_change > 0:
+            streak += 1
+        else:
+            streak = 0
+
+        if streak == 3:
+            budget += 500
+            streak = 0
+            print("STREAK BONUS! Three positive reputation moves: +500 EUR!")
+
+    title = show_final_result(name, budget, reputation, history)
+
+    try:
+        save_result(name, budget, reputation, title)
+    except OSError as error:
+        print(f"Could not save results.csv: {error}")
+
+
+# 8. Start here when the script is launched from a terminal.
+if __name__ == "__main__":
+    try:
+        play_game()
+    except (EOFError, KeyboardInterrupt):
+        print("\nGame interrupted. No new result was saved.")
